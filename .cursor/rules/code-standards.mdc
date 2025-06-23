@@ -1,0 +1,265 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# 🛠️ 代码规范和最佳实践
+
+## Flutter/Dart 代码规范
+
+### 命名规范
+- **类名**: 大驼峰命名法 (PascalCase)
+  ```dart
+  class GameProvider extends ChangeNotifier {}
+  ```
+- **变量和方法**: 小驼峰命名法 (camelCase)
+  ```dart
+  int targetScore = 1000;
+  void resetGame() {}
+  ```
+- **常量**: 小驼峰命名法
+  ```dart
+  const double tileSize = 64.0;
+  ```
+- **私有成员**: 下划线前缀
+  ```dart
+  bool _isAnimating = false;
+  void _processMatches() {}
+  ```
+
+### Widget 设计原则
+
+#### 1. 使用 const 构造函数
+```dart
+// ✅ 推荐
+class GameInfoPanel extends StatelessWidget {
+  const GameInfoPanel({super.key});
+}
+
+// ❌ 避免
+class GameInfoPanel extends StatelessWidget {
+  GameInfoPanel({Key? key}) : super(key: key);
+}
+```
+
+#### 2. 提取复杂组件
+参考 [lib/widgets/pet_tile_widget.dart](mdc:lib/widgets/pet_tile_widget.dart) 中的 AnimatedPetTileWidget 实现
+
+#### 3. 使用 RepaintBoundary 优化重绘
+```dart
+Widget _buildGameGrid() {
+  return RepaintBoundary(
+    child: GridView.builder(...)
+  );
+}
+```
+
+### 状态管理规范
+
+#### Provider 使用
+参考 [lib/providers/game_provider.dart](mdc:lib/providers/game_provider.dart) 的实现：
+
+1. **精确监听**
+```dart
+// ✅ 推荐 - 使用 Consumer
+Consumer<GameProvider>(
+  builder: (context, gameProvider, child) {
+    return Text('${gameProvider.score}');
+  },
+)
+
+// ❌ 避免 - 监听整个 Provider
+context.watch<GameProvider>()
+```
+
+2. **批量状态更新**
+```dart
+void updateMultipleStates() {
+  // 批量更新后统一通知
+  _score += 100;
+  _moves--;
+  notifyListeners(); // 只调用一次
+}
+```
+
+### 异步编程规范
+
+#### 1. 使用 async/await 替代嵌套回调
+```dart
+// ✅ 推荐
+Future<void> processMatches() async {
+  await animateMatches();
+  await dropTiles();
+  await fillEmptySpaces();
+}
+
+// ❌ 避免嵌套回调
+void processMatches() {
+  animateMatches().then((_) {
+    dropTiles().then((_) {
+      fillEmptySpaces();
+    });
+  });
+}
+```
+
+#### 2. 检查组件生命周期
+```dart
+Future<void> loadData() async {
+  final data = await apiCall();
+  if (mounted) { // 检查组件是否仍然存在
+    setState(() {
+      this.data = data;
+    });
+  }
+}
+```
+
+### 资源管理规范
+
+#### 动画控制器管理
+参考 [lib/main.dart](mdc:lib/main.dart) 中的实现：
+
+```dart
+class _GameScreenState extends State<GameScreen>
+    with TickerProviderStateMixin {
+  late AnimationController _controller;
+  
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, ...);
+  }
+  
+  @override
+  void dispose() {
+    _controller.dispose(); // 必须释放资源
+    super.dispose();
+  }
+}
+```
+
+### 性能优化规范
+
+#### 1. 对象池模式
+```dart
+class TilePool {
+  static final Queue<PetTile> _pool = Queue<PetTile>();
+  
+  static PetTile acquire(...) {
+    if (_pool.isNotEmpty) {
+      return _pool.removeFirst();
+    }
+    return PetTile(...);
+  }
+  
+  static void release(PetTile tile) {
+    _pool.add(tile);
+  }
+}
+```
+
+#### 2. 避免不必要的重建
+```dart
+// ✅ 使用 ValueKey 提供稳定标识
+ListView.builder(
+  itemBuilder: (context, index) {
+    return GameTile(
+      key: ValueKey('${tile.row}-${tile.col}'),
+      tile: tile,
+    );
+  },
+)
+```
+
+### 错误处理规范
+
+#### 1. 边界检查
+```dart
+bool _hasMatchAt(int row, int col) {
+  // 必须先检查边界
+  if (row < 0 || row >= gridSize || col < 0 || col >= gridSize) {
+    return false;
+  }
+  // 再进行业务逻辑
+}
+```
+
+#### 2. 异常捕获
+```dart
+Future<void> processMatches() async {
+  try {
+    await _animateMatches();
+    // 业务逻辑
+  } catch (e) {
+    debugPrint('匹配处理异常: $e');
+    // 错误恢复逻辑
+  } finally {
+    _isProcessing = false;
+  }
+}
+```
+
+### 代码注释规范
+
+#### 1. 文档注释
+```dart
+/// 游戏状态管理的核心类
+/// 
+/// 负责处理游戏逻辑、状态管理和动画控制
+class GameProvider extends ChangeNotifier {
+  /// 当前游戏分数
+  int get score => _score;
+  
+  /// 重置游戏到初始状态
+  /// 
+  /// 这将清除所有进度并重新生成游戏网格
+  void resetGame() {
+    // 实现...
+  }
+}
+```
+
+#### 2. 功能注释
+```dart
+// 🎯 匹配检测算法 - 高效实现，添加边界检查
+bool _hasMatchAt(int row, int col) {
+  // 边界检查
+  if (!_isValidPosition(row, col)) return false;
+  
+  // 水平匹配检测
+  final horizontalCount = _countHorizontalMatches(row, col, petType);
+  
+  // 垂直匹配检测  
+  final verticalCount = _countVerticalMatches(row, col, petType);
+}
+```
+
+### 测试规范
+
+#### 单元测试
+参考 [test/](mdc:test/) 目录结构：
+
+```dart
+// 模型测试
+test('should create tile with correct properties', () {
+  final tile = PetTile(row: 0, col: 1, petType: PetType.cat);
+  
+  expect(tile.row, 0);
+  expect(tile.col, 1);
+  expect(tile.petType, PetType.cat);
+});
+```
+
+#### Widget 测试
+```dart
+testWidgets('should display pet emoji', (WidgetTester tester) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: GameTile(tile: tile, onTap: () {}),
+    ),
+  );
+  
+  expect(find.text('🐱'), findsOneWidget);
+});
+```

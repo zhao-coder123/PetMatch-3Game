@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:math' as math;
 import '../providers/game_provider.dart';
 
 class GameInfoPanel extends StatelessWidget {
@@ -10,52 +11,70 @@ class GameInfoPanel extends StatelessWidget {
     return Consumer<GameProvider>(
       builder: (context, gameProvider, child) {
         return Container(
-          padding: const EdgeInsets.all(16),
-          margin: const EdgeInsets.all(16),
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          constraints: const BoxConstraints(
+            minHeight: 60, // 最小高度
+            maxHeight: 80, // 最大高度，防止溢出
+          ),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Colors.pink.shade100,
-                Colors.purple.shade100,
+                Colors.pink.shade100.withOpacity(0.9),
+                Colors.purple.shade100.withOpacity(0.9),
               ],
             ),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 8,
+                color: Colors.black.withOpacity(0.08),
+                blurRadius: 6,
                 offset: const Offset(0, 2),
               ),
             ],
+            border: Border.all(
+              color: Colors.white.withOpacity(0.6),
+              width: 1,
+            ),
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildInfoItem(
-                '分数',
-                '${gameProvider.score}',
-                '🏆',
-                Colors.orange,
-              ),
-              _buildDivider(),
-              _buildInfoItem(
-                '步数',
-                '${gameProvider.moves}',
-                '👣',
-                Colors.blue,
-              ),
-              _buildDivider(),
-              _buildInfoItem(
-                '等级',
-                '${gameProvider.level}',
-                '⭐',
-                Colors.yellow.shade700,
-              ),
-              _buildDivider(),
-              _buildTargetProgress(gameProvider),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _buildInfoItem(
+                    '分数',
+                    '${gameProvider.score}',
+                    '🏆',
+                    Colors.orange,
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: _buildInfoItem(
+                    '步数',
+                    '${gameProvider.moves}',
+                    '👣',
+                    Colors.blue,
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: _buildInfoItem(
+                    '等级',
+                    '${gameProvider.level}',
+                    '⭐',
+                    Colors.yellow.shade700,
+                  ),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: _buildTargetProgress(gameProvider),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -64,36 +83,47 @@ class GameInfoPanel extends StatelessWidget {
 
   Widget _buildInfoItem(String label, String value, String emoji, Color color) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(
-          emoji,
-          style: const TextStyle(fontSize: 24),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: color,
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            emoji,
+            style: const TextStyle(fontSize: 18),
           ),
         ),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey.shade600,
+        const SizedBox(height: 1),
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 9,
+                color: Colors.grey.shade600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildDivider() {
-    return Container(
-      height: 40,
-      width: 1,
-      color: Colors.grey.shade300,
     );
   }
 
@@ -102,21 +132,26 @@ class GameInfoPanel extends StatelessWidget {
     final clampedProgress = progress.clamp(0.0, 1.0);
 
     return Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        const Text(
-          '🎯',
-          style: TextStyle(fontSize: 24),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: const Text(
+            '🎯',
+            style: TextStyle(fontSize: 18),
+          ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Container(
-          width: 60,
-          height: 8,
+          height: 4,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(2),
             color: Colors.grey.shade300,
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(2),
             child: LinearProgressIndicator(
               value: clampedProgress,
               backgroundColor: Colors.transparent,
@@ -126,12 +161,19 @@ class GameInfoPanel extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 2),
-        Text(
-          '${(clampedProgress * 100).toInt()}%',
-          style: TextStyle(
-            fontSize: 10,
-            color: Colors.grey.shade600,
+        const SizedBox(height: 1),
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              '${(clampedProgress * 100).toInt()}%',
+              style: TextStyle(
+                fontSize: 8,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+              maxLines: 1,
+            ),
           ),
         ),
       ],

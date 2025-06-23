@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:provider/provider.dart';
 import '../models/pet_tile.dart';
 import '../models/pet_type.dart';
 import '../providers/game_provider.dart';
@@ -130,7 +131,7 @@ class PetTileWidget extends StatelessWidget {
   }
 }
 
-// 新的动画宠物方块组件
+// 🎨 增强版动画宠物方块组件 - 修复交换动画和特效
 class AnimatedPetTileWidget extends StatefulWidget {
   final PetTile? tile;
   final int row;
@@ -158,9 +159,17 @@ class _AnimatedPetTileWidgetState extends State<AnimatedPetTileWidget>
   late AnimationController _bounceController;
   late AnimationController _swapController;
   late AnimationController _matchController;
+  late AnimationController _fallController;
+  
   late Animation<double> _bounceAnimation;
   late Animation<double> _scaleAnimation;
   late Animation<double> _rotationAnimation;
+  late Animation<Offset> _swapAnimation;
+  late Animation<double> _fallAnimation;
+  
+  // 交换动画状态
+  bool _isSwapping = false;
+  Offset _swapOffset = Offset.zero;
 
   @override
   void initState() {
@@ -168,25 +177,31 @@ class _AnimatedPetTileWidgetState extends State<AnimatedPetTileWidget>
     
     // 弹跳动画控制器
     _bounceController = AnimationController(
-      duration: const Duration(milliseconds: 300),
+      duration: const Duration(milliseconds: 400),
       vsync: this,
     );
     
     // 交换动画控制器
     _swapController = AnimationController(
-      duration: const Duration(milliseconds: 400),
+      duration: const Duration(milliseconds: 500),
       vsync: this,
     );
     
     // 匹配消除动画控制器
     _matchController = AnimationController(
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    
+    // 下落动画控制器
+    _fallController = AnimationController(
+      duration: const Duration(milliseconds: 600),
       vsync: this,
     );
     
     _bounceAnimation = Tween<double>(
       begin: 1.0,
-      end: 1.1,
+      end: 1.15,
     ).animate(CurvedAnimation(
       parent: _bounceController,
       curve: Curves.elasticOut,
@@ -202,10 +217,26 @@ class _AnimatedPetTileWidgetState extends State<AnimatedPetTileWidget>
     
     _rotationAnimation = Tween<double>(
       begin: 0.0,
-      end: 2.0,
+      end: 4.0,
     ).animate(CurvedAnimation(
       parent: _matchController,
       curve: Curves.easeInOut,
+    ));
+    
+    _swapAnimation = Tween<Offset>(
+      begin: Offset.zero,
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _swapController,
+      curve: Curves.elasticOut,
+    ));
+    
+    _fallAnimation = Tween<double>(
+      begin: -1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(
+      parent: _fallController,
+      curve: Curves.bounceOut,
     ));
   }
 
@@ -213,20 +244,81 @@ class _AnimatedPetTileWidgetState extends State<AnimatedPetTileWidget>
   void didUpdateWidget(AnimatedPetTileWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     
-    // 检测到匹配时播放消除动画
+    // 检测交换动画
+    _checkSwapAnimation();
+    
+    // 检测匹配消除动画
     if (widget.tile?.isMatched == true && oldWidget.tile?.isMatched != true) {
       _playMatchAnimation();
     }
     
-    // 检测到选中状态变化时播放弹跳动画
+    // 检测选中状态变化
     if (widget.tile?.isSelected == true && oldWidget.tile?.isSelected != true) {
       _playBounceAnimation();
     }
     
-    // 检测到下落时播放下落动画
+    // 检测下落动画
     if (widget.tile?.isFalling == true && oldWidget.tile?.isFalling != true) {
       _playFallAnimation();
     }
+  }
+
+  // 🔄 检测并播放交换动画
+  void _checkSwapAnimation() {
+    final gameProvider = context.read<GameProvider>();
+    
+    if (gameProvider.isSwapAnimating) {
+      final swappingTile1 = gameProvider.swappingTile1;
+      final swappingTile2 = gameProvider.swappingTile2;
+      
+      if (swappingTile1 != null && swappingTile2 != null) {
+        // 检查当前方块是否参与交换
+        final currentTile = widget.tile;
+        if (currentTile != null) {
+          if (currentTile.row == swappingTile1.row && currentTile.col == swappingTile1.col) {
+            // 当前方块是第一个交换方块
+            _playSwapAnimation(swappingTile2.row - swappingTile1.row, swappingTile2.col - swappingTile1.col);
+          } else if (currentTile.row == swappingTile2.row && currentTile.col == swappingTile2.col) {
+            // 当前方块是第二个交换方块
+            _playSwapAnimation(swappingTile1.row - swappingTile2.row, swappingTile1.col - swappingTile2.col);
+          }
+        }
+      }
+    } else if (_isSwapping) {
+      // 交换动画结束，重置状态
+      _isSwapping = false;
+      _swapController.reset();
+    }
+  }
+
+  // 🎬 播放交换动画
+  void _playSwapAnimation(int rowDiff, int colDiff) {
+    if (_isSwapping) return;
+    
+    _isSwapping = true;
+    
+    // 计算交换偏移量
+    final offset = Offset(
+      colDiff * (widget.size + 4), // 4是margin
+      rowDiff * (widget.size + 4),
+    );
+    
+    _swapAnimation = Tween<Offset>(
+      begin: Offset.zero,
+      end: offset,
+    ).animate(CurvedAnimation(
+      parent: _swapController,
+      curve: Curves.elasticOut,
+    ));
+    
+    _swapController.forward().then((_) {
+      // 交换完成后保持在新位置一段时间
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          _swapController.reverse();
+        }
+      });
+    });
   }
 
   void _playBounceAnimation() {
@@ -240,7 +332,7 @@ class _AnimatedPetTileWidgetState extends State<AnimatedPetTileWidget>
   }
 
   void _playFallAnimation() {
-    // 下落动画已经在 flutter_animate 中处理
+    _fallController.forward();
   }
 
   @override
@@ -248,6 +340,7 @@ class _AnimatedPetTileWidgetState extends State<AnimatedPetTileWidget>
     _bounceController.dispose();
     _swapController.dispose();
     _matchController.dispose();
+    _fallController.dispose();
     super.dispose();
   }
 
@@ -261,15 +354,39 @@ class _AnimatedPetTileWidgetState extends State<AnimatedPetTileWidget>
     }
 
     return AnimatedBuilder(
-      animation: Listenable.merge([_bounceAnimation, _scaleAnimation, _rotationAnimation]),
+      animation: Listenable.merge([
+        _bounceAnimation, 
+        _scaleAnimation, 
+        _rotationAnimation, 
+        _swapAnimation,
+        _fallAnimation
+      ]),
       builder: (context, child) {
-        return Transform.scale(
-          scale: widget.tile!.isMatched 
-              ? _scaleAnimation.value 
-              : _bounceAnimation.value,
-          child: Transform.rotate(
-            angle: widget.tile!.isMatched ? _rotationAnimation.value : 0,
-            child: GestureDetector(
+        // 计算综合变换
+        double scale = 1.0;
+        if (widget.tile!.isMatched) {
+          scale = _scaleAnimation.value;
+        } else if (widget.tile!.isSelected) {
+          scale = _bounceAnimation.value;
+        }
+        
+        // 交换动画偏移
+        final swapOffset = _isSwapping ? _swapAnimation.value : Offset.zero;
+        
+        // 下落动画偏移
+        final fallOffset = widget.tile!.isFalling 
+            ? Offset(0, _fallAnimation.value * widget.size * 2)
+            : Offset.zero;
+        
+        final totalOffset = swapOffset + fallOffset;
+        
+        return Transform.translate(
+          offset: totalOffset,
+          child: Transform.scale(
+            scale: scale,
+            child: Transform.rotate(
+              angle: widget.tile!.isMatched ? _rotationAnimation.value : 0,
+              child: GestureDetector(
               onTap: widget.onTap,
               child: Container(
                 width: widget.size,
@@ -432,103 +549,10 @@ class _AnimatedPetTileWidgetState extends State<AnimatedPetTileWidget>
                   .fadeIn(duration: 300.ms),
             ),
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 }
 
-// 匹配特效组件
-class MatchEffectWidget extends StatefulWidget {
-  final MatchEffect effect;
-  final double size;
-
-  const MatchEffectWidget({
-    super.key,
-    required this.effect,
-    required this.size,
-  });
-
-  @override
-  State<MatchEffectWidget> createState() => _MatchEffectWidgetState();
-}
-
-class _MatchEffectWidgetState extends State<MatchEffectWidget>
-    with TickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _scaleAnimation;
-  late Animation<double> _opacityAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 800),
-      vsync: this,
-    );
-    
-    _scaleAnimation = Tween<double>(
-      begin: 0.5,
-      end: 2.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOutQuart,
-    ));
-    
-    _opacityAnimation = Tween<double>(
-      begin: 1.0,
-      end: 0.0,
-    ).animate(CurvedAnimation(
-      parent: _controller,
-      curve: const Interval(0.3, 1.0, curve: Curves.easeOut),
-    ));
-    
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: _scaleAnimation.value,
-          child: Opacity(
-            opacity: _opacityAnimation.value,
-            child: Container(
-              width: widget.size,
-              height: widget.size,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: RadialGradient(
-                  colors: [
-                    widget.effect.color.withOpacity(0.8),
-                    widget.effect.color.withOpacity(0.4),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-              child: Center(
-                child: Text(
-                  widget.effect.emoji,
-                  style: TextStyle(
-                    fontSize: widget.size * 0.6,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
- 

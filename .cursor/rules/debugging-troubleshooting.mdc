@@ -1,0 +1,424 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# 🔧 调试和故障排除指南
+
+## 常见问题和解决方案
+
+### 1. 内存泄漏问题
+
+#### 症状
+- 应用运行一段时间后变慢
+- 内存使用量持续增长
+- 动画卡顿或掉帧
+
+#### 检查点
+参考 [lib/main.dart](mdc:lib/main.dart) 中已修复的内存泄漏：
+
+```dart
+// ❌ 问题代码：静态变量导致内存泄漏
+class ParticlePainter extends CustomPainter {
+  static final List<Particle> particles = []; // 永不释放
+}
+
+// ✅ 修复代码：使用对象池管理
+class ParticleManager {
+  static final Queue<Particle> _particlePool = Queue<Particle>();
+  
+  static void cleanupParticles() {
+    _particlePool.clear(); // 可以清理
+  }
+}
+```
+
+#### 调试方法
+1. 使用 Flutter Inspector 查看Widget树
+2. 开启内存分析：`flutter run --profile`
+3. 检查动画控制器是否正确dispose
+
+### 2. 异步竞态条件
+
+#### 症状
+- 用户快速点击时应用崩溃
+- 状态不一致错误
+- 动画异常中断
+
+#### 问题根源
+参考 [lib/providers/game_provider.dart](mdc:lib/providers/game_provider.dart) 中的修复：
+
+```dart
+// ❌ 问题代码：嵌套回调容易产生竞态
+void swapTiles(int row1, int col1, int row2, int col2) {
+  _animateSwap().then((_) {
+    _checkMatches().then((_) {
+      _processMatches(); // 可能重复执行
+    });
+  });
+}
+
+// ✅ 修复代码：使用锁机制和async/await
+bool _isProcessingMatch = false;
+
+Future<void> swapTiles(int row1, int col1, int row2, int col2) async {
+  if (_isProcessingMatch) return; // 防止并发
+  
+  try {
+    _isProcessingMatch = true;
+    await _animateSwap();
+    await _checkMatches();
+    await _processMatches();
+  } finally {
+    _isProcessingMatch = false;
+  }
+}
+```
+
+#### 调试技巧
+1. 添加日志记录操作流程
+2. 使用断点检查异步操作顺序
+3. 实现操作锁防止并发
+
+### 3. 无限递归问题
+
+#### 症状
+- 应用突然崩溃
+- Stack overflow 错误
+- 连击效果无法停止
+
+#### 解决方案
+在 [lib/providers/game_provider.dart](mdc:lib/providers/game_provider.dart) 中添加递归深度控制：
+
+```dart
+// ✅ 修复代码：添加递归深度控制
+Future<void> _processMatches({int depth = 0}) async {
+  const maxDepth = 10; // 最大递归深度
+  
+  if (depth >= maxDepth) {
+    debugPrint('⚠️ 达到最大递归深度，停止处理');
+    return;
+  }
+  
+  final matches = _findMatches();
+  if (matches.isEmpty) return;
+  
+  // 处理当前匹配
+  await _animateAndRemoveMatches(matches);
+  
+  // 递归处理新的匹配（增加深度）
+  await _processMatches(depth: depth + 1);
+}
+```
+
+### 4. Widget重建性能问题
+
+#### 症状
+- UI响应缓慢
+- 滚动不流畅
+- 动画掉帧
+
+#### 优化策略
+参考 [lib/widgets/game_grid.dart](mdc:lib/widgets/game_grid.dart) 的最佳实践：
+
+```dart
+// ✅ 使用 const 构造函数
+class GameTile extends StatelessWidget {
+  const GameTile({
+    super.key,
+    required this.tile,
+    required this.onTap,
+  });
+}
+
+// ✅ 使用 RepaintBoundary 隔离重绘
+Widget _buildGameGrid() {
+  return RepaintBoundary(
+    child: GridView.builder(
+      itemBuilder: (context, index) {
+        return const GameTile(...);
+      },
+    ),
+  );
+}
+
+// ✅ 使用 Selector 精确监听
+Selector<GameProvider, PetTile?>(
+  selector: (context, provider) => provider.getTileAt(row, col),
+  builder: (context, tile, child) {
+    return GameTile(tile: tile);
+  },
+)
+```
+
+## 调试工具和技巧
+
+### 1. Flutter Inspector
+```bash
+# 启动应用并打开Inspector
+flutter run
+# 在IDE中打开 Flutter Inspector 面板
+```
+
+#### 使用要点
+- 查看Widget树结构
+- 检查状态变化
+- 分析重建频率
+- 定位内存泄漏
+
+### 2. 性能分析
+```bash
+# 性能模式运行
+flutter run --profile
+
+# 生成性能报告
+flutter run --profile --trace-startup
+```
+
+### 3. 调试输出
+在关键位置添加调试信息：
+
+```dart
+class GameProvider extends ChangeNotifier {
+  Future<void> swapTiles(int row1, int col1, int row2, int col2) async {
+    debugPrint('🎯 开始交换方块: ($row1,$col1) ↔ ($row2,$col2)');
+    
+    if (_isProcessingMatch) {
+      debugPrint('⚠️ 正在处理匹配，忽略操作');
+      return;
+    }
+    
+    try {
+      _isProcessingMatch = true;
+      debugPrint('🔄 设置处理锁');
+      
+      // 业务逻辑...
+      
+    } catch (e, stackTrace) {
+      debugPrint('❌ 交换方块错误: $e');
+      debugPrint('📊 堆栈跟踪: $stackTrace');
+    } finally {
+      _isProcessingMatch = false;
+      debugPrint('🔓 释放处理锁');
+    }
+  }
+}
+```
+
+### 4. 断言和验证
+```dart
+class GameProvider extends ChangeNotifier {
+  void _swapTilesInGrid(int row1, int col1, int row2, int col2) {
+    // 添加边界检查断言
+    assert(row1 >= 0 && row1 < gridSize, '行1超出边界: $row1');
+    assert(col1 >= 0 && col1 < gridSize, '列1超出边界: $col1');
+    assert(row2 >= 0 && row2 < gridSize, '行2超出边界: $row2');
+    assert(col2 >= 0 && col2 < gridSize, '列2超出边界: $col2');
+    
+    // 执行交换
+    final temp = _grid[row1][col1];
+    _grid[row1][col1] = _grid[row2][col2];
+    _grid[row2][col2] = temp;
+  }
+}
+```
+
+## 错误处理模式
+
+### 1. 分层错误捕获
+```dart
+class GameProvider extends ChangeNotifier {
+  String? _errorMessage;
+  String? get errorMessage => _errorMessage;
+  
+  void _handleError(Object error, StackTrace stackTrace) {
+    // 记录错误
+    debugPrint('🚨 游戏错误: $error');
+    debugPrint('📋 堆栈: $stackTrace');
+    
+    // 设置用户友好的错误信息
+    _errorMessage = _getUserFriendlyErrorMessage(error);
+    
+    // 重置到安全状态
+    _resetToSafeState();
+    
+    // 通知UI
+    notifyListeners();
+  }
+  
+  String _getUserFriendlyErrorMessage(Object error) {
+    if (error is RangeError) {
+      return '游戏数据异常，已自动修复';
+    } else if (error is StateError) {
+      return '操作太快了，请稍后再试';
+    }
+    return '发生未知错误，游戏已重置';
+  }
+  
+  void _resetToSafeState() {
+    _isProcessingMatch = false;
+    _selectedTile = null;
+    _errorMessage = null;
+  }
+}
+```
+
+### 2. UI错误显示
+```dart
+class GameScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Consumer<GameProvider>(
+        builder: (context, gameProvider, child) {
+          // 显示错误信息
+          if (gameProvider.errorMessage != null) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(gameProvider.errorMessage!),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            });
+          }
+          
+          return _buildGameContent();
+        },
+      ),
+    );
+  }
+}
+```
+
+## 测试和验证
+
+### 1. 单元测试示例
+参考 [test/](mdc:test/) 目录：
+
+```dart
+group('GameProvider 测试', () {
+  late GameProvider gameProvider;
+  
+  setUp(() {
+    gameProvider = GameProvider();
+  });
+  
+  test('应该正确处理方块交换', () async {
+    // 设置初始状态
+    gameProvider.initializeGrid();
+    
+    // 执行操作
+    await gameProvider.swapTiles(0, 0, 0, 1);
+    
+    // 验证结果
+    expect(gameProvider.isProcessingMatch, false);
+    expect(gameProvider.errorMessage, null);
+  });
+  
+  test('应该防止并发操作', () async {
+    gameProvider.initializeGrid();
+    
+    // 同时执行多个操作
+    final futures = [
+      gameProvider.swapTiles(0, 0, 0, 1),
+      gameProvider.swapTiles(1, 0, 1, 1),
+    ];
+    
+    await Future.wait(futures);
+    
+    // 验证只有一个操作被执行
+    expect(gameProvider.isProcessingMatch, false);
+  });
+});
+```
+
+### 2. Widget测试
+```dart
+testWidgets('游戏网格应该正确显示', (WidgetTester tester) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: ChangeNotifierProvider(
+        create: (_) => GameProvider(),
+        child: GameScreen(),
+      ),
+    ),
+  );
+  
+  // 验证UI渲染
+  expect(find.byType(GridView), findsOneWidget);
+  expect(find.byType(GameTile), findsWidgets);
+  
+  // 模拟用户交互
+  await tester.tap(find.byType(GameTile).first);
+  await tester.pump();
+  
+  // 验证状态变化
+  expect(find.text('选中'), findsOneWidget);
+});
+```
+
+## 性能监控
+
+### 1. 运行时性能监控
+```dart
+class PerformanceMonitor {
+  static final Stopwatch _stopwatch = Stopwatch();
+  
+  static void startTimer(String operation) {
+    debugPrint('⏱️ 开始: $operation');
+    _stopwatch.start();
+  }
+  
+  static void stopTimer(String operation) {
+    _stopwatch.stop();
+    final elapsed = _stopwatch.elapsedMilliseconds;
+    debugPrint('⏱️ 完成: $operation (${elapsed}ms)');
+    
+    if (elapsed > 16) { // 超过一帧时间
+      debugPrint('⚠️ 性能警告: $operation 耗时过长');
+    }
+    
+    _stopwatch.reset();
+  }
+}
+
+// 使用示例
+Future<void> _processMatches() async {
+  PerformanceMonitor.startTimer('处理匹配');
+  
+  // 业务逻辑...
+  
+  PerformanceMonitor.stopTimer('处理匹配');
+}
+```
+
+### 2. 内存使用监控
+```dart
+class MemoryMonitor {
+  static void logMemoryUsage(String context) {
+    final info = ProcessInfo.currentRss;
+    debugPrint('💾 内存使用 [$context]: ${info / 1024 / 1024:.1f}MB');
+  }
+}
+```
+
+## 发布前检查清单
+
+### 代码质量
+- [ ] 所有 TODO 和 FIXME 已处理
+- [ ] 移除调试输出和测试代码
+- [ ] 确保所有资源正确释放
+- [ ] 异常处理完整
+
+### 性能验证
+- [ ] 启动时间 < 3秒
+- [ ] 内存使用稳定
+- [ ] 动画流畅(60fps)
+- [ ] 无内存泄漏
+
+### 功能测试
+- [ ] 所有游戏功能正常
+- [ ] 多种设备尺寸适配
+- [ ] 异常情况处理正确
+- [ ] 用户体验流畅

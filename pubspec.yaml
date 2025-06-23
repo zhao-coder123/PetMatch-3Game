@@ -62,6 +62,9 @@ dependencies:
   flutter_animate: ^4.3.0
   lottie: ^3.1.0
   confetti: ^0.7.0
+  # 音效播放器
+  audioplayers: ^5.2.1
+  # 震动反馈 - 暂时使用系统HapticFeedback替代
 
 dev_dependencies:
   flutter_test:

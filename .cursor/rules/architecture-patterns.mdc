@@ -1,0 +1,331 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# 🏗️ 架构模式和设计原则
+
+## 整体架构
+
+### MVVM + Provider 架构
+项目采用 MVVM (Model-View-ViewModel) 模式结合 Provider 进行状态管理：
+
+```
+View (UI) ←→ ViewModel (Provider) ←→ Model (Data)
+    ↓              ↓                    ↓
+  Widgets      GameProvider        PetTile/PetType
+```
+
+### 目录结构设计
+```
+lib/
+├── main.dart                    # 应用入口点
+├── models/                      # 数据模型层
+│   ├── pet_tile.dart           # 宠物方块模型
+│   └── pet_type.dart           # 宠物类型枚举
+├── providers/                   # 业务逻辑层 (ViewModel)
+│   └── game_provider.dart      # 游戏状态管理
+└── widgets/                     # UI组件层 (View)
+    ├── game_grid.dart          # 游戏网格容器
+    ├── game_info_panel.dart    # 信息面板
+    ├── pet_tile_widget.dart    # 宠物方块组件
+    └── game_over_dialog.dart   # 游戏结束对话框
+```
+
+## 设计模式应用
+
+### 1. Provider 模式 (状态管理)
+核心实现在 [lib/providers/game_provider.dart](mdc:lib/providers/game_provider.dart)：
+
+```dart
+class GameProvider extends ChangeNotifier {
+  // 私有状态
+  List<List<PetTile?>> _grid = [];
+  int _score = 0;
+  
+  // 公开接口
+  int get score => _score;
+  List<List<PetTile?>> get grid => _grid;
+  
+  // 状态变更方法
+  void updateScore(int points) {
+    _score += points;
+    notifyListeners(); // 通知监听者
+  }
+}
+```
+
+#### 使用原则：
+- 单一责任：每个Provider只管理特定业务领域
+- 不可变暴露：通过getter暴露状态，保护内部数据
+- 精确通知：只在必要时调用 notifyListeners()
+
+### 2. 观察者模式 (UI响应)
+在UI组件中使用 Consumer 或 Selector 监听状态变化：
+
+```dart
+// Consumer - 监听整个Provider
+Consumer<GameProvider>(
+  builder: (context, gameProvider, child) {
+    return Text('分数: ${gameProvider.score}');
+  },
+)
+
+// Selector - 监听特定属性
+Selector<GameProvider, int>(
+  selector: (context, provider) => provider.score,
+  builder: (context, score, child) {
+    return Text('分数: $score');
+  },
+)
+```
+
+### 3. 对象池模式 (性能优化)
+在 [lib/main.dart](mdc:lib/main.dart) 的 ParticleManager 中实现：
+
+```dart
+class ParticleManager {
+  static final Queue<Particle> _particlePool = Queue<Particle>();
+  
+  static Particle acquire() {
+    if (_particlePool.isNotEmpty) {
+      return _particlePool.removeFirst()..reset();
+    }
+    return Particle();
+  }
+  
+  static void release(Particle particle) {
+    _particlePool.add(particle);
+  }
+}
+```
+
+### 4. 策略模式 (匹配算法)
+不同的匹配检测策略：
+
+```dart
+abstract class MatchStrategy {
+  List<PetTile> findMatches(List<List<PetTile?>> grid);
+}
+
+class HorizontalMatchStrategy implements MatchStrategy {
+  @override
+  List<PetTile> findMatches(List<List<PetTile?>> grid) {
+    // 水平匹配逻辑
+  }
+}
+
+class VerticalMatchStrategy implements MatchStrategy {
+  @override
+  List<PetTile> findMatches(List<List<PetTile?>> grid) {
+    // 垂直匹配逻辑
+  }
+}
+```
+
+### 5. 命令模式 (游戏操作)
+将游戏操作封装为命令：
+
+```dart
+abstract class GameCommand {
+  Future<void> execute();
+  Future<void> undo();
+}
+
+class SwapTilesCommand implements GameCommand {
+  final int fromRow, fromCol, toRow, toCol;
+  final GameProvider provider;
+  
+  SwapTilesCommand(this.provider, this.fromRow, this.fromCol, this.toRow, this.toCol);
+  
+  @override
+  Future<void> execute() async {
+    await provider.swapTiles(fromRow, fromCol, toRow, toCol);
+  }
+  
+  @override
+  Future<void> undo() async {
+    await provider.swapTiles(toRow, toCol, fromRow, fromCol);
+  }
+}
+```
+
+## 组件设计原则
+
+### 1. 单一责任原则
+每个Widget都有明确的职责：
+
+- [lib/widgets/pet_tile_widget.dart](mdc:lib/widgets/pet_tile_widget.dart) - 只负责单个宠物方块的渲染和动画
+- [lib/widgets/game_grid.dart](mdc:lib/widgets/game_grid.dart) - 只负责网格布局和交互
+- [lib/widgets/game_info_panel.dart](mdc:lib/widgets/game_info_panel.dart) - 只负责信息显示
+
+### 2. 依赖倒置原则
+高层模块不依赖低层模块，都依赖抽象：
+
+```dart
+// ❌ 错误：直接依赖具体实现
+class GameScreen {
+  final GameProvider gameProvider = GameProvider();
+}
+
+// ✅ 正确：依赖注入
+class GameScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => GameProvider(),
+      child: _buildGame(),
+    );
+  }
+}
+```
+
+### 3. 开闭原则
+对扩展开放，对修改关闭：
+
+```dart
+// 基础动画组件
+abstract class AnimatedWidget extends StatefulWidget {
+  final Duration duration;
+  final Curve curve;
+  
+  const AnimatedWidget({
+    required this.duration,
+    this.curve = Curves.easeInOut,
+  });
+}
+
+// 扩展：宠物方块动画
+class AnimatedPetTileWidget extends AnimatedWidget {
+  final PetTile tile;
+  
+  const AnimatedPetTileWidget({
+    required this.tile,
+    super.duration = const Duration(milliseconds: 300),
+    super.curve,
+  });
+}
+```
+
+## 状态管理模式
+
+### 分层状态管理
+```
+UI Layer (Widgets)
+     ↓ Consumer/Selector
+ViewModel Layer (Providers)
+     ↓ Business Logic
+Model Layer (Data Objects)
+```
+
+### 状态流向
+1. **用户操作** → UI Widget 接收事件
+2. **事件处理** → 调用 Provider 方法
+3. **状态更新** → Provider 修改内部状态
+4. **通知机制** → notifyListeners() 通知订阅者
+5. **UI重建** → Consumer 重建相关Widget
+
+### 异步状态处理
+在 [lib/providers/game_provider.dart](mdc:lib/providers/game_provider.dart) 中的异步操作模式：
+
+```dart
+class GameProvider extends ChangeNotifier {
+  bool _isProcessingMatch = false;
+  
+  Future<void> swapTiles(int row1, int col1, int row2, int col2) async {
+    // 防止并发操作
+    if (_isProcessingMatch) return;
+    
+    try {
+      _isProcessingMatch = true;
+      
+      // 执行交换
+      await _performSwap(row1, col1, row2, col2);
+      
+      // 处理匹配
+      await _processMatches();
+      
+    } finally {
+      _isProcessingMatch = false;
+    }
+  }
+}
+```
+
+## 错误处理架构
+
+### 分层错误处理
+1. **UI层**: 显示用户友好的错误信息
+2. **Provider层**: 业务逻辑错误处理和恢复
+3. **Model层**: 数据验证和边界检查
+
+### 错误恢复机制
+```dart
+class GameProvider extends ChangeNotifier {
+  void _handleError(Object error, StackTrace stackTrace) {
+    debugPrint('游戏错误: $error');
+    
+    // 错误恢复逻辑
+    _resetToSafeState();
+    
+    // 通知UI显示错误
+    _errorMessage = '操作失败，请重试';
+    notifyListeners();
+  }
+  
+  void _resetToSafeState() {
+    _isProcessingMatch = false;
+    _selectedTile = null;
+    // 其他安全状态重置
+  }
+}
+```
+
+## 性能优化架构
+
+### 渲染优化
+1. **RepaintBoundary**: 隔离重绘区域
+2. **const构造函数**: 减少不必要的重建
+3. **Selector**: 精确监听状态变化
+
+### 内存管理
+1. **对象池**: 重用频繁创建的对象
+2. **资源释放**: 及时dispose资源
+3. **弱引用**: 避免循环引用
+
+### 动画优化
+1. **Controller复用**: 避免频繁创建动画控制器
+2. **硬件加速**: 使用Transform而非布局变化
+3. **批量操作**: 将多个状态更新合并为一次通知
+
+## 测试架构
+
+### 测试分层
+```
+E2E Tests (集成测试)
+    ↓
+Widget Tests (组件测试)
+    ↓  
+Unit Tests (单元测试)
+```
+
+### 可测试性设计
+1. **依赖注入**: 便于Mock依赖
+2. **纯函数**: 方便单元测试
+3. **状态隔离**: Provider独立可测试
+
+```dart
+// 可测试的Provider设计
+class GameProvider extends ChangeNotifier {
+  GameProvider({
+    this.random = const RandomGenerator(),
+    this.timer = const TimerService(),
+  });
+  
+  final RandomGenerator random;
+  final TimerService timer;
+  
+  // 业务逻辑方法都是纯函数或易于测试
+}
+```
+

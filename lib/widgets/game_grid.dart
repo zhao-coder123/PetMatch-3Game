@@ -38,10 +38,10 @@ class GameGrid extends StatelessWidget {
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Colors.pink.shade50.withValues(alpha: 0.9),
-                      Colors.purple.shade50.withValues(alpha: 0.8),
-                      Colors.blue.shade50.withValues(alpha: 0.9),
-                      Colors.cyan.shade50.withValues(alpha: 0.8),
+                      Colors.pink.shade50.withOpacity(0.9),
+                      Colors.purple.shade50.withOpacity(0.8),
+                      Colors.blue.shade50.withOpacity(0.9),
+                      Colors.cyan.shade50.withOpacity(0.8),
                     ],
                     stops: const [0.0, 0.3, 0.7, 1.0],
                   ),
@@ -49,28 +49,28 @@ class GameGrid extends StatelessWidget {
                   boxShadow: [
                     // 外阴影
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.15),
+                      color: Colors.black.withOpacity(0.15),
                       blurRadius: 20,
                       offset: const Offset(0, 8),
                     ),
                     // 内发光效果
                     BoxShadow(
-                      color: Colors.white.withValues(alpha: 0.6),
+                      color: Colors.white.withOpacity(0.6),
                       blurRadius: 12,
                       offset: const Offset(0, -4),
                     ),
                   ],
                   border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.4),
+                    color: Colors.white.withOpacity(0.4),
                     width: 2,
                   ),
                 ),
-                child: Container(
+                                  child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.3),
+                    color: Colors.white.withOpacity(0.3),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.2),
+                      color: Colors.white.withOpacity(0.2),
                       width: 1,
                     ),
                   ),
@@ -129,10 +129,10 @@ class GameGrid extends StatelessWidget {
             )
           : Container(
               decoration: BoxDecoration(
-                color: Colors.grey.shade100.withValues(alpha: 0.3),
+                color: Colors.grey.shade100.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Colors.grey.shade200.withValues(alpha: 0.5),
+                  color: Colors.grey.shade200.withOpacity(0.5),
                   width: 1,
                 ),
               ),
