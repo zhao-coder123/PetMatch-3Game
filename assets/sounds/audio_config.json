@@ -1,0 +1,49 @@
+{
+  "sound_effects": {
+    "tap.mp3": {
+      "file": "sounds/tap.mp3.mp3",
+      "volume": 0.7,
+      "description": "轻柔点击音效"
+    },
+    "match.mp3": {
+      "file": "sounds/match.mp3.mp3",
+      "volume": 0.7,
+      "description": "匹配消除音效"
+    },
+    "combo.mp3": {
+      "file": "sounds/combo.mp3.mp3",
+      "volume": 0.7,
+      "description": "连击音效"
+    },
+    "swap.mp3": {
+      "file": "sounds/swap.mp3.mp3",
+      "volume": 0.7,
+      "description": "交换音效"
+    },
+    "drop.mp3": {
+      "file": "sounds/drop.mp3.mp3",
+      "volume": 0.7,
+      "description": "下落音效"
+    },
+    "level_up.mp3": {
+      "file": "sounds/level_up.mp3.mp3",
+      "volume": 0.7,
+      "description": "升级音效"
+    },
+    "victory.mp3": {
+      "file": "sounds/victory.mp3.mp3",
+      "volume": 0.7,
+      "description": "胜利音效"
+    },
+    "game_over.mp3": {
+      "file": "sounds/game_over.mp3.mp3",
+      "volume": 0.7,
+      "description": "游戏结束音效"
+    }
+  },
+  "background_music": {
+    "file": "sounds/background_music.mp3",
+    "volume": 0.4,
+    "loop": true
+  }
+}

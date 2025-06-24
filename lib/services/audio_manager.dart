@@ -78,22 +78,78 @@ class AudioManager {
     if (!_soundEnabled) return;
 
     try {
-      // 获取可用的播放器
+      debugPrint('🔊 播放音效: ${effect.toString()}');
+      
+      // 使用系统内置音效
+      await _playSystemSound(effect);
+      
+      // 添加震动反馈 - 只使用系统HapticFeedback
+      if (_vibrationEnabled) {
+        await _addHapticFeedback(effect);
+      }
+    } catch (e) {
+      debugPrint('🚨 音效播放失败: $e');
+    }
+  }
+
+  /// 🎵 播放音效文件
+  Future<void> _playSystemSound(SoundEffect effect) async {
+    try {
       final player = _getAvailablePlayer();
       if (player != null) {
         await player.setVolume(_soundVolume);
         
-        debugPrint('🔊 播放音效: ${effect.toString()}');
-        // 注意：这里可以添加实际的音效文件
-        // await player.play(AssetSource('sounds/${effect.name}.mp3'));
-        
-        // 添加震动反馈 - 只使用系统HapticFeedback
-        if (_vibrationEnabled) {
-          await _addHapticFeedback(effect);
+        String soundFile;
+        switch (effect) {
+          case SoundEffect.tap:
+            soundFile = 'sounds/tap.wav';
+            break;
+          case SoundEffect.match:
+            soundFile = 'sounds/match.mp3';  // 使用下载的真实音效
+            break;
+          case SoundEffect.combo:
+            soundFile = 'sounds/combo.wav';
+            break;
+          case SoundEffect.swap:
+            soundFile = 'sounds/swap.wav';
+            break;
+          case SoundEffect.drop:
+            soundFile = 'sounds/tap.wav';  // 复用点击音效
+            break;
+          case SoundEffect.levelUp:
+            soundFile = 'sounds/combo.wav';  // 使用连击音效表示升级
+            break;
+          case SoundEffect.victory:
+            soundFile = 'sounds/combo.wav';  // 使用连击音效表示胜利
+            break;
+          case SoundEffect.gameOver:
+            soundFile = 'sounds/tap.wav';  // 使用低音调表示失败
+            break;
+          default:
+            soundFile = 'sounds/tap.wav';
         }
+        
+        await player.play(AssetSource(soundFile));
+        debugPrint('🎵 播放自定义音效: $soundFile');
       }
     } catch (e) {
-      debugPrint('🚨 音效播放失败: $e');
+      // 如果自定义音效失败，回退到系统音效
+      debugPrint('⚠️ 自定义音效播放失败，使用系统音效: $e');
+      
+      switch (effect) {
+        case SoundEffect.match:
+        case SoundEffect.combo:
+          await SystemSound.play(SystemSoundType.click);
+          await Future.delayed(const Duration(milliseconds: 50));
+          await SystemSound.play(SystemSoundType.click);
+          break;
+        case SoundEffect.levelUp:
+        case SoundEffect.victory:
+          await SystemSound.play(SystemSoundType.alert);
+          break;
+        default:
+          await SystemSound.play(SystemSoundType.click);
+      }
     }
   }
 
