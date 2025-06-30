@@ -21,6 +21,19 @@ class GameProvider extends ChangeNotifier {
   bool _isAnimating = false;
   List<PetTile> _selectedTiles = [];
   
+  // 关卡进度相关
+  int _currentProgress = 0;
+  int _maxProgress = 1000;
+  
+  // 用户统计数据
+  int _totalGamesPlayed = 0;
+  int _totalScore = 0;
+  int _maxLevel = 1;
+  int _totalMatches = 0;
+  int _longestCombo = 0;
+  int _currentCombo = 0;
+  DateTime _lastPlayTime = DateTime.now();
+  
   // 添加交换动画状态
   PetTile? _swappingTile1;
   PetTile? _swappingTile2;
@@ -47,6 +60,20 @@ class GameProvider extends ChangeNotifier {
   bool get isAnimating => _isAnimating;
   List<PetTile> get selectedTiles => _selectedTiles;
   
+  // 关卡进度getters
+  int get currentProgress => _currentProgress;
+  int get maxProgress => _maxProgress;
+  double get progressPercentage => _currentProgress / _maxProgress;
+  
+  // 用户统计getters
+  int get totalGamesPlayed => _totalGamesPlayed;
+  int get totalScore => _totalScore;
+  int get maxLevel => _maxLevel;
+  int get totalMatches => _totalMatches;
+  int get longestCombo => _longestCombo;
+  int get currentCombo => _currentCombo;
+  DateTime get lastPlayTime => _lastPlayTime;
+  
   // 音效管理器访问
   AudioManager get audioManager => _audioManager;
   
@@ -67,13 +94,20 @@ class GameProvider extends ChangeNotifier {
     _moves = 30;
     _level = 1;
     _targetScore = 1000;
+    _currentProgress = 0;
+    _maxProgress = 1000;
     _isGameOver = false;
     _isAnimating = false;
     _isProcessingMatch = false;
     _matchProcessingDepth = 0;
+    _currentCombo = 0;
     _selectedTiles.clear();
     _clearAnimationStates();
     _generateGrid();
+    
+    // 更新游戏次数
+    _totalGamesPlayed++;
+    _lastPlayTime = DateTime.now();
     
     // 初始化音效系统
     await _audioManager.initialize();
@@ -226,7 +260,11 @@ class GameProvider extends ChangeNotifier {
 
   // 🎮 方块点击处理 - 状态管理层，添加锁机制
   void onTileTap(int row, int col) {
-    if (_isAnimating || _isGameOver || _isProcessingMatch || _isSwapAnimating) return;
+    // 完全屏蔽所有处理中的状态，防止冲突
+    if (_isAnimating || _isGameOver || _isProcessingMatch || _isSwapAnimating || _matchProcessingDepth > 0) {
+      debugPrint('🚫 操作被阻止: 游戏正在处理中');
+      return;
+    }
 
     final tile = _grid[row][col];
     if (tile == null) return;
@@ -274,64 +312,105 @@ class GameProvider extends ChangeNotifier {
     return (rowDiff == 1 && colDiff == 0) || (rowDiff == 0 && colDiff == 1);
   }
 
-  // 🔄 方块交换 - 添加真正的交换动画
+  // 🔄 方块交换 - 修复交换动画逻辑
   Future<void> _swapTiles(PetTile tile1, PetTile tile2) async {
     if (_isProcessingMatch || _isSwapAnimating) return;
     
+    debugPrint('🔄 检查交换有效性: (${tile1.row}, ${tile1.col}) ↔ (${tile2.row}, ${tile2.col})');
+    
+    // 先预检查交换是否有效（不修改实际数据）
+    final isValidSwap = _preCheckSwapValidity(tile1, tile2);
+    
+    if (!isValidSwap) {
+      // 无效交换：只播放失败反馈，不执行交换
+      debugPrint('❌ 无效交换，播放失败反馈');
+      // 🔊 播放失败音效
+      _audioManager.playSoundEffect(SoundEffect.tap);
+      
+      // 清除选择状态
+      _clearSelectionAndSwapStates();
+      notifyListeners();
+      return;
+    }
+    
+    // 有效交换：执行完整的交换流程
+    debugPrint('✅ 有效交换，开始执行');
+    
+    // 设置交换状态，阻止新的操作
     _isAnimating = true;
     _isSwapAnimating = true;
-    _isProcessingMatch = true;
-    
-    // 设置交换动画状态
     _swappingTile1 = tile1;
     _swappingTile2 = tile2;
-    
-    debugPrint('🎬 开始交换动画');
     notifyListeners();
     
     try {
-      // 等待交换动画完成
-      await Future.delayed(const Duration(milliseconds: 500));
-      
       // 执行实际交换
       _performSwap(tile1, tile2);
       
-      // 等待交换完成的视觉效果
-      await Future.delayed(const Duration(milliseconds: 100));
+      // 播放交换动画
+      await Future.delayed(const Duration(milliseconds: 300));
       
-      // 检查是否有匹配
-      final hasMatch = _checkForMatches();
-      debugPrint('🔍 匹配检查结果: $hasMatch');
+      // 减少步数并处理匹配
+      _moves--;
+      _isProcessingMatch = true;
+      await _processMatches();
       
-      if (hasMatch) {
-        _moves--;
-        debugPrint('✅ 有效交换，剩余步数: $_moves');
-        await _processMatches();
-      } else {
-        // 无匹配时恢复原状
-        debugPrint('❌ 无匹配，恢复原状');
-        await Future.delayed(const Duration(milliseconds: 200));
-        _performSwap(tile2, tile1); // 交换回来
-        await Future.delayed(const Duration(milliseconds: 300));
-      }
-
-      // 清除选择和交换状态
-      _clearSelectionAndSwapStates();
-      
-      if (hasMatch) {
-        _checkGameOver();
-      }
     } catch (e) {
       debugPrint('🚨 交换过程出错: $e');
-      _clearSelectionAndSwapStates();
+      // 发生错误时回退
+      _performSwap(tile2, tile1);
     } finally {
-      _isAnimating = false;
-      _isSwapAnimating = false;
-      _isProcessingMatch = false;
-      _swappingTile1 = null;
-      _swappingTile2 = null;
-      notifyListeners();
+      // 清理所有状态
+      await _cleanupSwapState();
+      
+      // 检查游戏结束条件
+      _checkGameOver();
     }
+  }
+
+  // 预检查交换有效性（不修改实际数据）
+  bool _preCheckSwapValidity(PetTile tile1, PetTile tile2) {
+    // 临时保存原始状态
+    final originalType1 = tile1.petType;
+    final originalType2 = tile2.petType;
+    
+    // 临时交换检查匹配
+    _grid[tile1.row][tile1.col] = tile1.copyWith(petType: originalType2);
+    _grid[tile2.row][tile2.col] = tile2.copyWith(petType: originalType1);
+    
+    // 检查是否有匹配
+    final hasMatch = _hasMatchAt(tile1.row, tile1.col) || _hasMatchAt(tile2.row, tile2.col);
+    
+    // 立即恢复原始状态
+    _grid[tile1.row][tile1.col] = tile1.copyWith(petType: originalType1);
+    _grid[tile2.row][tile2.col] = tile2.copyWith(petType: originalType2);
+    
+    return hasMatch;
+  }
+
+  // 清理交换状态的专用方法
+  Future<void> _cleanupSwapState() async {
+    // 清除选择状态
+    _clearSelectionAndSwapStates();
+    
+    // 重置所有动画状态
+    _isAnimating = false;
+    _isSwapAnimating = false;
+    _isProcessingMatch = false;
+    _swappingTile1 = null;
+    _swappingTile2 = null;
+    
+    // 重置匹配处理深度（防止状态遗留）
+    if (_matchProcessingDepth == 0) {
+      _matchingTiles.clear();
+      _showMatchEffect = false;
+    }
+    
+    // 确保UI更新
+    notifyListeners();
+    
+    // 短暂延迟确保状态完全重置
+    await Future.delayed(const Duration(milliseconds: 50));
   }
 
   // 执行实际的方块交换
@@ -366,7 +445,7 @@ class GameProvider extends ChangeNotifier {
     return false;
   }
 
-  // 💥 匹配处理 - 修复递归深度控制和特效
+  // �� 匹配处理 - 修复递归深度控制和特效，添加进度更新
   Future<void> _processMatches() async {
     if (_matchProcessingDepth >= maxMatchDepth) {
       debugPrint('⚠️ 达到最大匹配处理深度 ($maxMatchDepth)，停止递归');
@@ -381,6 +460,15 @@ class GameProvider extends ChangeNotifier {
       
       if (matchedTiles.isNotEmpty) {
         debugPrint('🎯 找到 ${matchedTiles.length} 个匹配的方块');
+        
+        // 更新连击数
+        _currentCombo++;
+        if (_currentCombo > _longestCombo) {
+          _longestCombo = _currentCombo;
+        }
+        
+        // 更新总匹配数
+        _totalMatches++;
         
         // 🔊 播放匹配音效
         if (matchedTiles.length >= 5) {
@@ -405,15 +493,25 @@ class GameProvider extends ChangeNotifier {
         final baseScore = matchedTiles.length * 100;
         final bonusScore = _calculateBonusScore(matchedTiles.length);
         final depthBonus = _matchProcessingDepth * 50; // 连锁奖励
-        final totalScore = baseScore + bonusScore + depthBonus;
+        final comboBonus = _currentCombo * 25; // 连击奖励
+        final totalScore = baseScore + bonusScore + depthBonus + comboBonus;
         _score += totalScore;
+        _totalScore += totalScore;
         
-        debugPrint('💰 得分: 基础($baseScore) + 奖励($bonusScore) + 连锁($depthBonus) = $totalScore');
+        // 更新关卡进度
+        _currentProgress += totalScore;
+        
+        debugPrint('💰 得分: 基础($baseScore) + 奖励($bonusScore) + 连锁($depthBonus) + 连击($comboBonus) = $totalScore');
         
         notifyListeners();
         
+        // 检查是否完成关卡
+        if (_currentProgress >= _maxProgress) {
+          await _completeLevel();
+        }
+        
         // 显示匹配特效
-        await Future.delayed(const Duration(milliseconds: 600));
+        await Future.delayed(const Duration(milliseconds: 400));
         
         // 移除匹配的方块
         _removeMatchedTiles();
@@ -421,33 +519,39 @@ class GameProvider extends ChangeNotifier {
         notifyListeners();
         
         // 下落动画
-        await Future.delayed(const Duration(milliseconds: 300));
-        // 🔊 播放下落音效
-        _audioManager.playSoundEffect(SoundEffect.drop);
+        await Future.delayed(const Duration(milliseconds: 200));
         _dropTiles();
         notifyListeners();
         
         // 填充新方块
-        await Future.delayed(const Duration(milliseconds: 400));
+        await Future.delayed(const Duration(milliseconds: 300));
         _fillEmptySpaces();
         notifyListeners();
         
-        // 检查连锁反应
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (_checkForMatches()) {
+        // 检查连锁反应 - 减少延迟避免状态冲突
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (_checkForMatches() && _matchProcessingDepth < maxMatchDepth) {
           debugPrint('🔗 检测到连锁反应，继续处理...');
           await _processMatches(); // 递归处理连锁
         } else {
           debugPrint('✅ 匹配处理完成，无更多连锁');
+          // 重置连击（如果没有连锁）
+          _currentCombo = 0;
         }
+      } else {
+        // 没有匹配时重置连击
+        _currentCombo = 0;
       }
     } catch (e) {
       debugPrint('🚨 匹配处理出错: $e');
+      _currentCombo = 0;
     } finally {
       _matchProcessingDepth--;
       if (_matchProcessingDepth == 0) {
         _matchingTiles.clear();
         _showMatchEffect = false;
+        // 最终状态清理
+        debugPrint('🏁 所有匹配处理完成');
       }
     }
   }
@@ -613,41 +717,49 @@ class GameProvider extends ChangeNotifier {
   void _checkGameOver() {
     if (_moves <= 0) {
       _isGameOver = true;
-      if (_score >= _targetScore) {
-        // 🔊 播放胜利音效
-        _audioManager.playSoundEffect(SoundEffect.victory);
-        // 胜利进入下一关
-        _nextLevel();
-      } else {
-        // 🔊 播放游戏结束音效
-        _audioManager.playSoundEffect(SoundEffect.gameOver);
-      }
+      _currentCombo = 0;
+      debugPrint('🔚 游戏结束！得分: $_score / $_targetScore');
+      notifyListeners();
     }
   }
 
-  // ⬆️ 下一关设置
-  void _nextLevel() {
+  // 完成关卡
+  Future<void> _completeLevel() async {
+    debugPrint('🎉 关卡 $_level 完成!');
+    
+    // 播放胜利音效
+    _audioManager.playSoundEffect(SoundEffect.combo);
+    
+    // 自动进入下一关
+    await Future.delayed(const Duration(milliseconds: 1000));
+    nextLevel();
+  }
+
+  // 下一关
+  void nextLevel() {
     _level++;
-    _moves = 30 + (_level * 2); // 每关增加2步
-    _targetScore = _level * 1000 + (_level * 200); // 递增目标分数
+    if (_level > _maxLevel) {
+      _maxLevel = _level;
+    }
+    
+    // 重置关卡数据，但保持分数累积
+    _moves = 30 + (_level * 2); // 随关卡增加步数
+    _targetScore = _score + (1000 + _level * 500); // 累积目标分数
+    _currentProgress = 0;
+    _maxProgress = 1000 + _level * 500;
     _isGameOver = false;
-    _matchProcessingDepth = 0;
+    _currentCombo = 0;
     
-    // 🔊 播放升级音效
-    _audioManager.playSoundEffect(SoundEffect.levelUp);
-    
+    // 生成新网格
     _generateGrid();
+    
+    debugPrint('🚀 进入第 $_level 关，目标分数: $_targetScore');
+    notifyListeners();
   }
 
   // 🔄 重置游戏
   void resetGame() {
     initializeGame();
-  }
-
-  // 🎮 公开的下一关方法
-  void nextLevel() {
-    _nextLevel();
-    notifyListeners();
   }
 
   // 🎯 获取当前关卡信息
